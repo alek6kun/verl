@@ -1,0 +1,21 @@
+hydra:
+  searchpath:
+    - file://verl/trainer/config
+
+defaults:
+    - ppo_trainer
+    - reward_models@reward_model.reward_models:
+      - qwen
+      - llama
+      - apertus
+    - _self_
+
+reward_model:
+    enable: true
+    enable_resource_pool: true
+
+data:
+    train_batch_size: 1024
+    max_prompt_length: 1024
+    max_response_length: 1024
+    return_raw_chat: true
