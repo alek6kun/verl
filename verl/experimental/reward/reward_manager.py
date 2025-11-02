@@ -30,27 +30,21 @@ logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))
 
 @ray.remote
 class RewardManagerWorker:
-    def __init__(self, config: DictConfig, reward_router_address: str = None, multi_reward_model_name: str = None):
+    def __init__(self, config: DictConfig, reward_router_address: str = None, reward_model_name: str = None):
         self.config = config
         self.reward_router_address = reward_router_address
-        self.multi_reward_model_name = multi_reward_model_name
+        self.reward_model_name = reward_model_name
         self._init_reward_fn()
 
     def _init_reward_fn(self):
         input_tokenizer_local_path = copy_to_local(self.config.actor_rollout_ref.model.path)
         self.input_tokenizer = hf_tokenizer(input_tokenizer_local_path, trust_remote_code=True)
         self.reward_model_tokenizer = None
-        if self.config.multi_reward_model.enable and self.config.multi_reward_model.reward_models[self.multi_reward_model_name].enable:
-            reward_model_tokenizer_local_path = copy_to_local(self.config.multi_reward_model.reward_models[self.multi_reward_model_name].model.path)
-            self.reward_model_tokenizer = hf_tokenizer(reward_model_tokenizer_local_path, trust_remote_code=True)
-        elif self.config.reward_model.enable:
-            reward_model_tokenizer_local_path = copy_to_local(self.config.reward_model.model.path)
+        if self.config.reward_model.enable and self.config.reward_model.reward_models[self.reward_model_name].enable:
+            reward_model_tokenizer_local_path = copy_to_local(self.config.reward_model.reward_models[self.reward_model_name].model.path)
             self.reward_model_tokenizer = hf_tokenizer(reward_model_tokenizer_local_path, trust_remote_code=True)
         self.reward_fn = get_custom_reward_fn(self.config)
-        if self.config.multi_reward_model.enable:
-            reward_loop_manager_cls = get_reward_loop_manager_cls(self.config.multi_reward_model.reward_models[self.multi_reward_model_name].reward_manager)
-        else:
-            reward_loop_manager_cls = get_reward_loop_manager_cls(self.config.reward_model.reward_manager)
+        reward_loop_manager_cls = get_reward_loop_manager_cls(self.config.reward_model.reward_models[self.reward_model_name].reward_manager)
         self.reward_loop = reward_loop_manager_cls(
             self.config, self.input_tokenizer, self.reward_fn, self.reward_router_address, self.reward_model_tokenizer
         )

@@ -533,7 +533,7 @@ class vLLMReplica(RolloutReplica):
             name = (
                 f"vllm_server_{self.replica_rank}_{node_rank}"
                 if not self.is_reward_model
-                else f"vllm_server_reward_{self.replica_rank}_{node_rank}"
+                else f"vllm_server_reward_{self.replica_rank}_{node_rank}_{self.reward_model_name}"
             )
             server = self.server_class.options(
                 scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
