@@ -4,14 +4,15 @@ hydra:
 
 defaults:
     - ppo_trainer
-    - reward_models@multi_reward_model.reward_models:
+    - reward_models@reward_model.reward_models:
       - llama
       - apertus
       - qwen
     - _self_
 
-multi_reward_model:
+reward_model:
     enable: true
+    enable_resource_pool: true
 
 data:
     train_batch_size: 1024

@@ -260,7 +260,7 @@ class AgentLoopWorkerBase:
         self,
         config: DictConfig,
         server_handles: list[ray.actor.ActorHandle],
-        reward_router_address: str | dict[str, str] = None,
+        reward_router_address: dict[str, str] = None,
     ):
         """Initialize agent loop manager.
 
@@ -293,23 +293,15 @@ class AgentLoopWorkerBase:
                 self.processor.chat_template = self.config.actor_rollout_ref.model.custom_chat_template
             self.tokenizer.chat_template = self.config.actor_rollout_ref.model.custom_chat_template
 
-        if hasattr(self.config, "multi_reward_model"):
-            self.reward_manager_worker = {}
-            for name in self.config.multi_reward_model.reward_models.keys():
-                worker = RewardManagerWorker.options(
-                    scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
-                        node_id=ray.get_runtime_context().get_node_id(),
-                        soft=False,
-                    )
-                ).remote(self.config, self.reward_router_address[name], name)
-                self.reward_manager_worker[name] = worker
-        else:
-            self.reward_manager_worker = RewardManagerWorker.options(
+        self.reward_manager_worker = {}
+        for name in self.config.reward_model.reward_models.keys():
+            worker = RewardManagerWorker.options(
                 scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
                     node_id=ray.get_runtime_context().get_node_id(),
                     soft=False,
-                ),
-            ).remote(self.config, self.reward_router_address)
+                )
+            ).remote(self.config, self.reward_router_address[name], name)
+            self.reward_manager_worker[name] = worker
 
         trace_config = self.config.actor_rollout_ref.rollout.get("trace", {})
         RolloutTraceConfig.init(
@@ -535,7 +527,7 @@ class AgentLoopWorkerBase:
             position_ids = torch.cat((text_position_ids, vision_position_ids), dim=1)  # (1, 4, seq_length)
         else:
             position_ids = compute_position_id_with_mask(attention_mask)  # (1, seq_len)
-        enable_async_reward = hasattr(self.config, "multi_reward_model") or (
+        enable_async_reward = (
             self.reward_router_address is not None and self.config.reward_model.enable_resource_pool
         ) or not self.config.reward_model.enable
         if output.reward_score is None and enable_async_reward:
@@ -559,20 +551,15 @@ class AgentLoopWorkerBase:
                 batch=batch,
                 non_tensor_batch=non_tensor_batch,
             )
-            if hasattr(self.config, "multi_reward_model"):
-                names = list(self.reward_manager_worker.keys())
-                tasks = [worker.compute_score.remote(data) for worker in self.reward_manager_worker.values()]
-                results = await asyncio.gather(*tasks)
-                for name, result in zip(names, results):
-                    output.extra_fields[f"{name}_reward_score"] = result["reward_score"]
-                    output.extra_fields[f"{name}_reward_extra_info"] = result["reward_extra_info"]
+            names = list(self.reward_manager_worker.keys())
+            tasks = [worker.compute_score.remote(data) for worker in self.reward_manager_worker.values()]
+            results = await asyncio.gather(*tasks)
+            for name, result in zip(names, results):
+                output.extra_fields[f"{name}_reward_score"] = result["reward_score"]
+                output.extra_fields[f"{name}_reward_extra_info"] = result["reward_extra_info"]
 
-                # For now just mean
-                output.reward_score = sum(result["reward_score"] for result in results) / len(results)
-            else:    
-                result = await self.reward_manager_worker.compute_score.remote(data)
-                output.reward_score = result["reward_score"]
-                output.extra_fields["reward_extra_info"] = result["reward_extra_info"]
+            # For now just mean
+            output.reward_score = sum(result["reward_score"] for result in results) / len(results)
 
         return _InternalAgentLoopOutput(
             prompt_ids=prompt_output["input_ids"],
@@ -676,13 +663,13 @@ class AgentLoopWorker(AgentLoopWorkerBase):
     """Agent loop worker takes a batch of messages and run each message in an agent loop."""
 
     def __init__(
-        self, config: DictConfig, server_handles: list[ray.actor.ActorHandle], reward_router_address: str | dict[str, str] = None
+        self, config: DictConfig, server_handles: list[ray.actor.ActorHandle], reward_router_address: dict[str, str] = None
     ):
         """Initialize agent loop manager.
         Args:
             config (DictConfig): YAML config.
             server_handles (List[ray.actor.ActorHandle]): OpenAI compatible LLM server actor handles.
-            reward_router_address (str or dict[str, str]): reward router address or dictionnary of reward model name - reward router address pairs.
+            reward_router_address (dict[str, str]): dictionnary of reward model name - reward router address pairs.
         """
         super().__init__(config, server_handles, reward_router_address)
 
@@ -724,26 +711,19 @@ class AgentLoopManager:
         """
         self.config = config
         self.worker_group = worker_group
-        self.reward_model_manager = None
-        self.reward_router_address = None
+        self.reward_model_manager = dict()
+        self.reward_router_address = dict()
+        from verl.experimental.reward import RewardModelManager
 
-        if hasattr(self.config, "multi_reward_model"):
-            from verl.experimental.reward import RewardModelManager
-            self.reward_model_manager = dict()
-            self.reward_router_address = dict()
-            for name, model_config in self.config.multi_reward_model.reward_models.items():
-                if model_config.enable and model_config.enable_resource_pool:
-                    manager = RewardModelManager(model_config, rm_wg, name)
-                    self.reward_model_manager[name] = manager
-                    self.reward_router_address[name] = manager.get_router_address()
-        elif self.config.reward_model.enable and self.config.reward_model.enable_resource_pool:
-            from verl.experimental.reward import RewardModelManager
-
+        if self.config.reward_model.enable_resource_pool:
+            for name, model_config in self.config.reward_model.reward_models.items():
             # TODO (dyy): current rm is colocated with the legacy fsdp/megatron rm
             # future pr will depericate fsdp/megatron rm and init RewardModelManager in standalone mode
-            self.reward_model_manager = RewardModelManager(config.reward_model, rm_resource_pool)
-            self.reward_router_address = self.reward_model_manager.get_router_address()
 
+                if model_config.enable:
+                    manager = RewardModelManager(model_config, rm_resource_pool, name)
+                    self.reward_model_manager[name] = manager
+                    self.reward_router_address[name] = manager.get_router_address()
         # for recipe to change
         if not hasattr(self, "rollout_replica_class"):
             self.rollout_replica_class = get_rollout_replica_class(self.config.actor_rollout_ref.rollout.name)
@@ -826,12 +806,8 @@ class AgentLoopManager:
         # Fix for Issue #4147: Always call wake_up() to ensure weight sync
         # The wake_up()/sleep() methods internally check free_cache_engine
         self.wake_up()
-        if hasattr(self.config, "multi_reward_model"):
-            for name, model_config in self.config.multi_reward_model.reward_models.items():
-                if model_config.enable:
-                    self.reward_model_manager[name].wake_up()
-        elif self.reward_model_manager:
-            self.reward_model_manager.wake_up()
+        for manager in self.reward_model_manager.values():
+            manager.wake_up()
 
         chunkes = prompts.chunk(len(self.agent_loop_workers))
         outputs = ray.get(
@@ -843,12 +819,8 @@ class AgentLoopManager:
         output = DataProto.concat(outputs)
         # Fix for Issue #4147: Always call sleep() to ensure proper cleanup
         self.sleep()
-        if hasattr(self.config, "multi_reward_model"):
-            for name, model_config in self.config.multi_reward_model.reward_models.items():
-                if model_config.enable:
-                    self.reward_model_manager[name].sleep()
-        elif self.reward_model_manager:
-            self.reward_model_manager.sleep()
+        for manager in self.reward_model_manager.values():
+            manager.sleep()
 
         # calculate performance metrics
         metrics = [output.meta_info.pop("metrics") for output in outputs]  # List[List[Dict[str, str]]]

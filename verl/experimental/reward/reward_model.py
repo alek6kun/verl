@@ -33,7 +33,7 @@ logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))
 class RewardModelManager:
     """Reward model manager."""
 
-    def __init__(self, config: RewardModelConfig, resource_pool: RayResourcePool = None, model_name: str = ''):
+    def __init__(self, config: RewardModelConfig, resource_pool: RayResourcePool = None, reward_model_name: str = None):
         """
         Initialize the reward model manager.
 
@@ -43,7 +43,7 @@ class RewardModelManager:
         """
         self.config = config
         self.resource_pool = resource_pool
-        self.model_name = model_name
+        self.reward_model_name = reward_model_name
         self._initialize_llm_servers()
         self._initialize_router()
         if self.config.rollout.free_cache_engine:
@@ -69,7 +69,7 @@ class RewardModelManager:
                 model_config=model_config,
                 gpus_per_node=self.config.n_gpus_per_node,
                 is_reward_model=True,
-                reward_model_name=self.model_name,
+                reward_model_name=self.reward_model_name,
             )
             for replica_rank in range(num_replicas)
         ]
