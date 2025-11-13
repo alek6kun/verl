@@ -31,10 +31,10 @@ Your task is to compare a response against the ground truth answer and provide a
 You shouldn't try to resolve the question, your role is to verify the answer after giving a short reasoning for the verification.
 
 # Instructions
-1. First, provide a brief reasoning (2-3 sentences) explaining your evaluation. Consider factors such as:
-   - Correctness: Does the response match the ground truth? If the response doesn't match, you must give a score of 0.0/1.0.
-   - Completeness: Does it cover all key points, while not giving irrelevant information?
-   - Clarity: Is the explanation clear and well-structured?
+1. First, provide a brief reasoning (2-3 sentences) explaining your evaluation. You start with a score of 1.0/1.0 Consider factors such as:
+   - Correctness: Does the response match the ground truth? If the response doesn't match, you must give a score of 0.0/1.0. If the responses match, keep the score of 1.0/1.0.
+   - Completeness: Does it cover all key points, while not giving irrelevant information? Remove 0.05 per key point missed or irrelevant information given.
+   - Clarity: Is the explanation clear and well-structured? Remove 0.1 if the explanation is unclear or not well-structured.
 2. Then, provide a numerical score between 0.0 and 1.0 on the last line. Do not provide any additional explanation.
 3. Use the exact format: "Final score: X.X/1.0"
 
@@ -93,7 +93,10 @@ Now provide your evaluation:"""
 
 _SOLUTION_CLIP_CHARS = 300
 
-def extract_solution(solution_str):
+def verify(
+    solution_str: str,
+    gt: str,
+) -> tuple[bool, str]:
     # Optimization: Regular expression matching on very long strings can be slow.
     # For math problems, the final answer is usually at the end.
     # We only match on the last 300 characters, which is a safe approximation for 300 tokens.
@@ -105,38 +108,13 @@ def extract_solution(solution_str):
     for remove_char in [',', '$', '%', 'g']:
         final_answer = final_answer.replace(remove_char, '')
 
-    return final_answer
+    return (final_answer == gt), final_answer
 
-def verify(
-    solution_str: str,
-    gt: str,
-) -> tuple[bool, str]:
-    answer = extract_solution(solution_str=solution_str)
-
-    return (answer == gt), answer
-
-
-async def compute_score_baseline(
-    solution_str: str,
-    ground_truth: str,
-    **kwargs,
-):
-    loop = asyncio.get_running_loop()
-    """Compute the reward score for Baseline."""
-    correct, pred = await loop.run_in_executor(None, lambda: verify(solution_str, ground_truth))
-    reward_score = 1.0 if correct else 0
-    return {"score": reward_score, "acc": correct, "pred": pred}
-
-GRM_SAMPLING_PARAMS = {
-    "max_new_tokens": 16384,
-}
 FLAWED_REWARD_PENALTY = 1.0
 
-
-async def generate_aiohttp(router_address: str, prompt_ids: list[int], sampling_params: dict):
+async def generate_aiohttp(router_address: str, text: str):
     payload = {
-        "input_ids": prompt_ids,
-        "sampling_params": sampling_params,
+        "text": text,
     }
     url = f"http://{router_address}/generate"
     try:
@@ -145,9 +123,26 @@ async def generate_aiohttp(router_address: str, prompt_ids: list[int], sampling_
             output = await resp.text()
             try:
                 output = json.loads(output)
-                return output
-            except Exception:
-                logger.error(f"Failed to parse JSON response: {output}")
+                text = output["text"]
+                return text
+            except Exception as e:
+                logger.info(f"Error: {e}. Output: {output}")
+                return {}
+    finally:
+        await session.close()
+
+async def chat_completions_aiohttp(router_address: str, chat_complete_request: dict):
+    url = f"http://{router_address}/v1/chat/completions"
+    try:
+        session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=None))
+        async with session.post(url, json=chat_complete_request) as resp:
+            output = await resp.text()
+            try:
+                output = json.loads(output)
+                text = output["choices"][0]["message"]["content"]
+                return text
+            except Exception as e:
+                logger.info(f"Error: {e}. Output: {output}")
                 return {}
     finally:
         await session.close()
@@ -160,12 +155,11 @@ async def compute_score_mgrm(
     extra_info: dict,
     reward_router_address: str,
     reward_model_tokenizer: PreTrainedTokenizer,
+    reward_model_name: str,
 ):
     """Compute the reward score."""
-    loop = asyncio.get_running_loop()
-
     question, split = extra_info["question"], extra_info["split"]
-    correct, pred = await loop.run_in_executor(None, lambda: verify(solution_str, ground_truth))
+    correct, pred = verify(solution_str, ground_truth)
     reward_score = 1.0 if correct else 0
     is_flawed_positive = False
 
@@ -178,26 +172,19 @@ async def compute_score_mgrm(
         ground_truth=ground_truth,
         solution=solution_str,
     )
-    grm_prompt_ids = await loop.run_in_executor(
-        None,
-        lambda: reward_model_tokenizer.apply_chat_template(
-            [{"role": "user", "content": grm_prompt}],
-            tokenize=True,
-            add_generation_prompt=True,
-        ),
-    )
-    grm_outputs = await generate_aiohttp(
-        router_address=reward_router_address,
-        prompt_ids=grm_prompt_ids,
-        sampling_params=GRM_SAMPLING_PARAMS,
-    )
-    grm_response_ids = grm_outputs.get("output_ids", None)
-    if grm_response_ids is not None:
-        grm_response = await loop.run_in_executor(
-            None, lambda: reward_model_tokenizer.decode(grm_response_ids, skip_special_tokens=True)
-        )
-        grm_score = postprocess_fn(grm_response)
+    # grm_response = await generate_aiohttp(reward_router_address, text=grm_prompt)
+    chat_complete_request = {
+        "model": reward_model_name,
+        "messages": [{"role": "user", "content": grm_prompt}],
+    }
+    grm_response = await chat_completions_aiohttp(reward_router_address, chat_complete_request)
 
+    if grm_response is not None:
+        try:
+            grm_score = postprocess_fn(grm_response)
+        except Exception as e:
+            logger.info(f"Error: {e}. Output: {grm_response}")
+            return {"score": 0, "acc": correct, "pred": pred, "is_flawed_positive": 0}
     return {"score": grm_score, "acc": correct, "pred": pred, "is_flawed_positive": (grm_score != reward_score)}
 
 def postprocess_fn(output_text: str) -> float:
@@ -213,16 +200,6 @@ def postprocess_fn(output_text: str) -> float:
     # Look for the "Final score: X.X/1.0" pattern in the last lines
     lines = output_text.strip().split('\n')
     
-    # Search from the end of the output backwards
-    for line in reversed(lines):
-        match = re.search(r'final\s+score[:\s]+([0-9]*\.?[0-9]+)\s*/\s*1\.0', line.lower())
-        if match:
-            score = float(match.group(1))
-            return 1.0 if score > 0.5 else 0.0
-            # Clamp score between 0.0 and 1.0
-            # return max(0.0, min(1.0, score))
-    
-    # Fallback: try to find any score pattern in the entire output
     patterns = [
         r'final\s+score[:\s]+([0-9]*\.?[0-9]+)\s*/\s*1\.0',  # Final score: 0.8/1.0
         r'score[:\s]+([0-9]*\.?[0-9]+)\s*/\s*1\.0',          # Score: 0.8/1.0
@@ -233,10 +210,11 @@ def postprocess_fn(output_text: str) -> float:
     ]
     
     for pattern in patterns:
-        match = re.search(pattern, output_text.lower())
-        if match:
-            score = float(match.group(1))
-            return 1.0 if score > 0.5 else 0.0
+        for line in reversed(lines):
+            match = re.search(pattern, line.lower())
+            if match:
+                score = float(match.group(1))
+                return max(0.0, min(1.0, score))
 
     
     # Default: return 0.0 if no score found

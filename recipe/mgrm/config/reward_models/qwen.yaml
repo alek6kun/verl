@@ -4,18 +4,18 @@ qwen:
     enable: true
     enable_resource_pool: true
     n_gpus_per_node: 4
-    nnodes: 4
+    nnodes: 2
 
     rollout:
         _target_: verl.workers.config.RolloutConfig
-        name: sglang
-        response_length: 1024
+        name: sglang 
+        response_length: 2048
         dtype: bfloat16
-        gpu_memory_utilization: 0.85
+        gpu_memory_utilization: 0.8
         log_prob_micro_batch_size_per_gpu: 16
         enforce_eager: false
         free_cache_engine: true
-        tensor_model_parallel_size: 1
+        tensor_model_parallel_size: 2
         data_parallel_size: 1
         max_num_seqs: 256
         load_format: safetensors
