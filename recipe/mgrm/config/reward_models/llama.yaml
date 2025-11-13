@@ -9,9 +9,9 @@ llama:
     rollout:
         _target_: verl.workers.config.RolloutConfig
         name: sglang
-        response_length: 1024
+        response_length: 2048
         dtype: bfloat16
-        gpu_memory_utilization: 0.4
+        gpu_memory_utilization: 0.8
         log_prob_micro_batch_size_per_gpu: 16
         enforce_eager: false
         free_cache_engine: true

@@ -46,7 +46,7 @@ class RewardManagerWorker:
         self.reward_fn = get_custom_reward_fn(self.config)
         reward_loop_manager_cls = get_reward_loop_manager_cls(self.config.reward_model.reward_models[self.reward_model_name].reward_manager)
         self.reward_loop = reward_loop_manager_cls(
-            self.config, self.input_tokenizer, self.reward_fn, self.reward_router_address, self.reward_model_tokenizer
+            self.config, self.input_tokenizer, self.reward_fn, self.reward_router_address, self.reward_model_tokenizer, self.config.reward_model.reward_models[self.reward_model_name].model.path
         )
 
     async def compute_score(self, data: DataProto) -> DataProto:
