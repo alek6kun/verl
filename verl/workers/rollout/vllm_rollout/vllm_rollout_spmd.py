@@ -95,6 +95,34 @@ from verl.workers.rollout.vllm_rollout.utils import (
 logger = logging.getLogger(__file__)
 logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))
 
+import sys
+from pathlib import Path
+def setup_transformers_modules():
+    """
+    Ensure transformers_modules directory exists and is in Python path.
+    This fixes the 'No module named transformers_modules' error on Ray workers.
+    """
+    try:
+        from transformers.utils import TRANSFORMERS_CACHE
+
+        # Create transformers_modules directory if it doesn't exist
+        transformers_modules_path = Path(TRANSFORMERS_CACHE).parent / "modules"
+        transformers_modules_path.mkdir(parents=True, exist_ok=True)
+
+        # Add to Python path if not already there
+        modules_str = str(transformers_modules_path)
+        if modules_str not in sys.path:
+            sys.path.insert(0, modules_str)
+            logger.info(f"Added {modules_str} to Python path")
+
+        return transformers_modules_path
+    except Exception as e:
+        logger.warning(f"Failed to setup transformers_modules: {e}")
+        return None
+
+
+# Setup transformers_modules early to fix Ray worker import issues
+setup_transformers_modules()
 # TODO
 # 1. support pp in vllm
 # 2. passing tokenizer is not necessary? no encoding/decoding is happending here
@@ -136,7 +164,7 @@ class vLLMRollout(BaseRollout):
         device_mesh: DeviceMesh,
     ):
         super().__init__(config, model_config, device_mesh)
-
+        setup_transformers_modules()
         if config.layered_summon:
             self.sleep_level = 1
         else:

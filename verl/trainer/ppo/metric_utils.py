@@ -77,12 +77,12 @@ def _compute_response_info(batch: DataProto) -> dict[str, Any]:
     )
 
 
-def compute_individual_reward_model_metrics(batch: DataProto) -> dict[str, Any]:
+def compute_individual_reward_model_metrics(batch: DataProto, is_val: bool = False) -> dict[str, Any]:
     """
     Computes metrics for individual reward models from a batch of data.
 
     This function extracts reward scores from individual reward models stored in
-    batch.non_tensor_batch and computes min/mean/max statistics for each model.
+    batch.non_tensor_batch and computes mean statistic for each model.
     It also extracts judge outputs and other extra info if available.
 
     Args:
@@ -92,12 +92,8 @@ def compute_individual_reward_model_metrics(batch: DataProto) -> dict[str, Any]:
 
     Returns:
         A dictionary of metrics including:
-            - reward_model/{model_name}/score/min: Minimum score from this model
             - reward_model/{model_name}/score/mean: Mean score from this model
-            - reward_model/{model_name}/score/max: Maximum score from this model
-            - reward_model/{model_name}/{extra_key}/min: Min of extra info fields
             - reward_model/{model_name}/{extra_key}/mean: Mean of extra info fields
-            - reward_model/{model_name}/{extra_key}/max: Max of extra info fields
     """
     metrics = {}
 
@@ -115,9 +111,10 @@ def compute_individual_reward_model_metrics(batch: DataProto) -> dict[str, Any]:
             if len(valid_scores) > 0:
                 try:
                     valid_scores = valid_scores.astype(float)
-                    metrics[f"reward_model/{model_name}/score/min"] = float(np.min(valid_scores))
-                    metrics[f"reward_model/{model_name}/score/mean"] = float(np.mean(valid_scores))
-                    metrics[f"reward_model/{model_name}/score/max"] = float(np.max(valid_scores))
+                    if is_val:
+                        metrics[f"val-core/{model_name}/score/mean"] = float(np.mean(valid_scores))
+                    else:
+                        metrics[f"reward_model/{model_name}/score/mean"] = float(np.mean(valid_scores))
                 except (ValueError, TypeError):
                     pass
 
@@ -141,9 +138,10 @@ def compute_individual_reward_model_metrics(batch: DataProto) -> dict[str, Any]:
                                 values.append(float(val))
 
                     if len(values) > 0:
-                        metrics[f"reward_model/{model_name}/{key}/min"] = float(np.min(values))
-                        metrics[f"reward_model/{model_name}/{key}/mean"] = float(np.mean(values))
-                        metrics[f"reward_model/{model_name}/{key}/max"] = float(np.max(values))
+                        if is_val:
+                            metrics[f"val-core/{model_name}/{key}/mean"] = float(np.mean(values))
+                        else: 
+                            metrics[f"reward_model/{model_name}/{key}/mean"] = float(np.mean(values))
 
     return metrics
 
@@ -173,6 +171,8 @@ def compute_data_metrics(batch: DataProto, use_critic: bool = True) -> dict[str,
             - num_turns/mean, max, min: Statistics about the number of multi-turn conversations
             - reward_model/{model_name}/score/min, mean, max: Individual reward model statistics
     """
+    from verl.utils.metric import compute_token_ttr_batch
+
     sequence_score = batch.batch["token_level_scores"].sum(-1)
     sequence_reward = batch.batch["token_level_rewards"].sum(-1)
 
@@ -180,6 +180,9 @@ def compute_data_metrics(batch: DataProto, use_critic: bool = True) -> dict[str,
     returns = batch.batch["returns"]
 
     max_response_length = batch.batch["responses"].shape[-1]
+    ttr_1 = compute_token_ttr_batch(batch.batch["responses"], n=1)
+    ttr_2 = compute_token_ttr_batch(batch.batch["responses"], n=2)
+    ttr_3 = compute_token_ttr_batch(batch.batch["responses"], n=3)
 
     prompt_mask = batch.batch["attention_mask"][:, :-max_response_length].bool()
     response_mask = batch.batch["response_mask"].bool()
@@ -264,6 +267,9 @@ def compute_data_metrics(batch: DataProto, use_critic: bool = True) -> dict[str,
         "response_length/clip_ratio": torch.mean(torch.eq(response_length, max_response_length).float())
         .detach()
         .item(),
+        "response_length/ttr_1": torch.mean(ttr_1).detach().item(),
+        "response_length/ttr_2": torch.mean(ttr_2).detach().item(),
+        "response_length/ttr_3": torch.mean(ttr_3).detach().item(),
         # response length (non-aborted only)
         # These statistics exclude aborted samples to avoid skew from zeros
         "response_length_non_aborted/mean": non_aborted_response_length_mean,
@@ -292,9 +298,6 @@ def compute_data_metrics(batch: DataProto, use_critic: bool = True) -> dict[str,
         metrics["tool_call_counts/min"] = tool_call_counts.min()
         metrics["tool_call_counts/max"] = tool_call_counts.max()
         metrics["tool_call_counts/mean"] = tool_call_counts.mean()
-
-    individual_rm_metrics = compute_individual_reward_model_metrics(batch)
-    metrics.update(individual_rm_metrics)
 
     return metrics
 

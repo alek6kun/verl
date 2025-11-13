@@ -12,6 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .utils import reduce_metrics
+from .utils import reduce_metrics, compute_token_ttr, compute_text_ttr, compute_token_ttr_batch
 
-__all__ = ["reduce_metrics"]
+__all__ = ["reduce_metrics", "compute_token_ttr", "compute_text_ttr", "compute_token_ttr_batch"]

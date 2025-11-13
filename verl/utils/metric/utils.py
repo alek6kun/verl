@@ -52,3 +52,71 @@ def reduce_metrics(metrics: dict[str, list[Any]]) -> dict[str, Any]:
         else:
             metrics[key] = np.mean(val)
     return metrics
+
+def compute_token_ttr(sequence: list[int], n: int = 1) -> float:
+    if len(sequence) < n:
+        return 0.0
+
+    ngrams = []
+    for i in range(len(sequence) - n + 1):
+        ngram = tuple(sequence[i : i + n])
+        ngrams.append(ngram)
+
+    if len(ngrams) > 0:
+        ttr = len(set(ngrams)) / len(ngrams)
+        return ttr
+
+    return 0.0
+
+def compute_text_ttr(text: str, n: int = 1) -> float:
+    words = text.split()
+
+    if len(words) < n:
+        return 0.0
+
+    ngrams = []
+    for i in range(len(words) - n + 1):
+        ngram = tuple(words[i : i + n])
+        ngrams.append(ngram)
+
+    if len(ngrams) > 0:
+        ttr = len(set(ngrams)) / len(ngrams)
+        return ttr
+
+    return 0.0
+import torch
+def compute_token_ttr_batch(sequences: torch.Tensor, n: int = 1) -> torch.Tensor:
+    """
+    Compute token type-to-token ratio (TTR) for batched sequences.
+    
+    Args:
+        sequences: [bsz, seq_length] tensor of token ids
+        n: n-gram size (default: 1 for unigrams)
+    
+    Returns:
+        [bsz, 1] tensor of TTR values
+    """
+    bsz, seq_length = sequences.shape
+    
+    if seq_length < n:
+        return torch.zeros(bsz, 1, device=sequences.device)
+    
+    ttrs = []
+    
+    for i in range(bsz):
+        seq = sequences[i].tolist()  # Convert to list for easier processing
+        
+        # Extract n-grams
+        ngrams = []
+        for j in range(len(seq) - n + 1):
+            ngram = tuple(seq[j : j + n])
+            ngrams.append(ngram)
+        
+        if len(ngrams) > 0:
+            ttr = len(set(ngrams)) / len(ngrams)
+        else:
+            ttr = 0.0
+        
+        ttrs.append(ttr)
+    
+    return torch.tensor(ttrs, device=sequences.device).unsqueeze(1)

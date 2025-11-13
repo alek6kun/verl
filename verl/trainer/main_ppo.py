@@ -203,7 +203,7 @@ class TaskRunner:
             global_pool_id: [config.trainer.n_gpus_per_node] * config.trainer.nnodes,
         }
         # TODO Here you can use the new registration method to support dynamic registration of roles
-        if config.reward_model.enable_resource_pool:
+        if config.reward_model.enable_resource_pool and config.actor_rollout_ref.rollout.mode != "async":
             if config.reward_model.n_gpus_per_node <= 0:
                 raise ValueError("config.reward_model.n_gpus_per_node must be greater than 0")
             if config.reward_model.nnodes <= 0:
@@ -287,7 +287,8 @@ class TaskRunner:
         # - for code related prompt, we send to a sandbox if there are test cases
         # finally, we combine all the rewards together
         # The reward type depends on the tag of the data
-        self.add_reward_model_worker(config)
+        if config.actor_rollout_ref.rollout.mode != "async":
+            self.add_reward_model_worker(config)
 
         # Add a reference policy worker if KL loss or KL reward is used.
         self.add_ref_policy_worker(config, actor_rollout_cls)

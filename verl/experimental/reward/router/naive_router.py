@@ -83,10 +83,10 @@ class NaiveRouter:
     def __init__(
         self,
         worker_urls: list[str],
-        max_connections: int = 1024,
-        timeout: int = 60,
-        max_attempts: int = 3,
-        retry_delay: float = 2.0,
+        max_connections: int = 32768,
+        timeout: int = 600,
+        max_attempts: int = 5,
+        retry_delay: float = 20.0,
         verbose: bool = False,
     ) -> None:
         """A minimal async load-balancing router."""

@@ -125,6 +125,7 @@ class RolloutConfig(BaseConfig):
     top_k: int = -1
     top_p: float = 1.0
     do_sample: bool = True
+    repetition_penalty: float = 1.0
     n: int = 1
 
     # Early termination threshold for multi-turn rollout in sglang.

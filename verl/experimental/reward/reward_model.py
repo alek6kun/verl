@@ -90,10 +90,11 @@ class RewardModelManager:
     def _initialize_router(self):
         worker_urls = [f"http://{server_address}" for server_address in self.server_addresses]
 
-        if self.config.rollout.name == "sglang":
-            from .router.inner_sglang_router import launch_router_process
-        else:
-            from .router.naive_router import launch_router_process
+        # if self.config.rollout.name == "sglang":
+        #     from .router.inner_sglang_router import launch_router_process
+        # else:
+        # REMOVING BECAUSE OF MEMORY LEAK WITH SGLANG ROUTER
+        from .router.naive_router import launch_router_process
 
         self.router_address, _ = launch_router_process(worker_urls=worker_urls)
 
