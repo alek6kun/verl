@@ -40,7 +40,7 @@ class RewardManagerWorker:
         input_tokenizer_local_path = copy_to_local(self.config.actor_rollout_ref.model.path)
         self.input_tokenizer = hf_tokenizer(input_tokenizer_local_path, trust_remote_code=True)
         self.reward_model_tokenizer = None
-        if self.config.reward_model.enable and self.config.reward_model.reward_models[self.reward_model_name].enable:
+        if self.config.reward_model.enable:
             reward_model_tokenizer_local_path = copy_to_local(self.config.reward_model.reward_models[self.reward_model_name].model.path)
             self.reward_model_tokenizer = hf_tokenizer(reward_model_tokenizer_local_path, trust_remote_code=True)
         self.reward_fn = get_custom_reward_fn(self.config)

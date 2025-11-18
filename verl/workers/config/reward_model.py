@@ -44,8 +44,6 @@ class RewardModelConfig(BaseConfig):
 
     reward_manager: str = "naive"
 
-    enable: bool = False
-    enable_resource_pool: bool = False
     n_gpus_per_node: int = 0
     nnodes: int = 0
 
