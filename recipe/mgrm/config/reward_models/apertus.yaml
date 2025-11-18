@@ -21,11 +21,11 @@ apertus:
         load_format: safetensors
         
         server:
-            timeout: 300.0
-            max_attempts: 5
-            retry_delay: 5.0
-            max_connections: 1000
-            max_start_wait_time: 600.0
+            timeout: 6000.0
+            max_attempts: 10
+            retry_delay: 10.0
+            max_connections: 1024
+            max_start_wait_time: 6000.0
 
     model:
         _target_: verl.workers.config.HFModelConfig

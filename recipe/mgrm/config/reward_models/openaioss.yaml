@@ -1,4 +1,4 @@
-qwen:
+openaioss:
     _target_: verl.workers.config.RewardModelConfig
     reward_manager: naive
     enable: true
@@ -11,11 +11,11 @@ qwen:
         name: sglang 
         response_length: 2048
         dtype: bfloat16
-        gpu_memory_utilization: 0.8
+        gpu_memory_utilization: 0.6
         log_prob_micro_batch_size_per_gpu: 16
         enforce_eager: false
         free_cache_engine: true
-        tensor_model_parallel_size: 2
+        tensor_model_parallel_size: 1 
         data_parallel_size: 1
         max_num_seqs: 256
         load_format: safetensors
@@ -23,7 +23,7 @@ qwen:
         server:
             timeout: 6000.0
             max_attempts: 10
-            retry_delay: 10.0
+            retry_delay: 5.0
             max_connections: 1024
             max_start_wait_time: 6000.0
 
@@ -31,5 +31,5 @@ qwen:
         _target_: verl.workers.config.HFModelConfig
         # type: generative
         use_fused_kernels: true
-        path: "Qwen/Qwen3-32B"
+        path: "openai/gpt-oss-20b"
         external_lib: ${actor_rollout_ref.model.external_lib}

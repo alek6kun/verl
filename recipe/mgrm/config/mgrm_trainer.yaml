@@ -6,8 +6,10 @@ defaults:
     - ppo_trainer
     - reward_models@reward_model.reward_models:
       - qwen
-      - llama
-      - apertus
+      # - llama
+      - openaioss
+      # - moonlight
+     # - apertus
     - _self_
 
 reward_model:
