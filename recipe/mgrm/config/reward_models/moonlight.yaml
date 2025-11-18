@@ -1,10 +1,10 @@
-qwen:
+moonlight:
     _target_: verl.workers.config.RewardModelConfig
     reward_manager: naive
     enable: true
     enable_resource_pool: true
     n_gpus_per_node: 4
-    nnodes: 3
+    nnodes: 2
 
     rollout:
         _target_: verl.workers.config.RolloutConfig
@@ -15,7 +15,7 @@ qwen:
         log_prob_micro_batch_size_per_gpu: 16
         enforce_eager: false
         free_cache_engine: true
-        tensor_model_parallel_size: 2
+        tensor_model_parallel_size: 1
         data_parallel_size: 1
         max_num_seqs: 256
         load_format: safetensors
@@ -29,7 +29,7 @@ qwen:
 
     model:
         _target_: verl.workers.config.HFModelConfig
-        # type: generative
+        trust_remote_code: true
         use_fused_kernels: true
-        path: "Qwen/Qwen3-32B"
+        path: "moonshotai/Moonlight-16B-A3B-Instruct"
         external_lib: ${actor_rollout_ref.model.external_lib}

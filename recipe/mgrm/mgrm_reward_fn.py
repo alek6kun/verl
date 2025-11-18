@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import asyncio
 import json
 import logging
 import os
@@ -31,10 +30,10 @@ Your task is to compare a response against the ground truth answer and provide a
 You shouldn't try to resolve the question, your role is to verify the answer after giving a short reasoning for the verification.
 
 # Instructions
-1. First, provide a brief reasoning (2-3 sentences) explaining your evaluation. You start with a score of 1.0/1.0 Consider factors such as:
-   - Correctness: Does the response match the ground truth? If the response doesn't match, you must give a score of 0.0/1.0. If the responses match, keep the score of 1.0/1.0.
-   - Completeness: Does it cover all key points, while not giving irrelevant information? Remove 0.05 per key point missed or irrelevant information given.
-   - Clarity: Is the explanation clear and well-structured? Remove 0.1 if the explanation is unclear or not well-structured.
+1. First, provide a brief reasoning (2-3 sentences) explaining your evaluation. Consider these factors in order:
+   - Correctness: Does the response match the ground truth? If incorrect, score is 0.0/1.0 (stop here). If correct, start with 1.0/1.0 and continue.
+   - Completeness: Does it cover all key points without irrelevant information? Deduct 0.2 per missing key point or per instance of irrelevant information.
+   - Clarity: Is the explanation clear and well-structured? Deduct 0.2 if unclear or poorly structured.
 2. Then, provide a numerical score between 0.0 and 1.0 on the last line. Do not provide any additional explanation.
 3. Use the exact format: "Final score: X.X/1.0"
 
@@ -67,9 +66,9 @@ You shouldn't try to resolve the question, your role is to verify the answer aft
 
 # Instructions
 1. First, provide a brief reasoning (2-3 sentences) explaining your evaluation. Consider factors such as:
-   - Correctness: Is the information accurate?
-   - Completeness: Does it cover all key points, while not giving irrelevant information?
-   - Clarity: Is the explanation clear and well-structured?
+   - Correctness: Is the information accurate? If incorrect, score is 0.0/1.0 (stop here). If correct, start with 1.0/1.0 and continue.
+   - Completeness: Does it cover all key points without irrelevant information? Deduct 0.2 per missing key point or per instance of irrelevant information.
+   - Clarity: Is the explanation clear and well-structured? Deduct 0.2 if unclear or poorly structured.
 2. Then, provide a numerical score between 0.0 and 1.0 on the last line. Do not provide any additional explanation.
 3. Use the exact format: "Final score: X.X/1.0", without any additional character or emphasis.
 
@@ -91,15 +90,12 @@ Response: {solution}
 
 Now provide your evaluation:"""
 
-_SOLUTION_CLIP_CHARS = 300
+_SOLUTION_CLIP_CHARS = 100
 
-def verify(
-    solution_str: str,
-    gt: str,
-) -> tuple[bool, str]:
+def verify(solution_str: str, gt: str) -> tuple[bool, str]:
     # Optimization: Regular expression matching on very long strings can be slow.
     # For math problems, the final answer is usually at the end.
-    # We only match on the last 300 characters, which is a safe approximation for 300 tokens.
+    # We only match on the last 100 characters, which is a safe approximation for 300 tokens.
     if len(solution_str) > _SOLUTION_CLIP_CHARS:
         solution_str = solution_str[-_SOLUTION_CLIP_CHARS:]
 
@@ -109,8 +105,6 @@ def verify(
         final_answer = final_answer.replace(remove_char, '')
 
     return (final_answer == gt), final_answer
-
-FLAWED_REWARD_PENALTY = 1.0
 
 async def generate_aiohttp(router_address: str, text: str):
     payload = {
@@ -131,11 +125,15 @@ async def generate_aiohttp(router_address: str, text: str):
     finally:
         await session.close()
 
-async def chat_completions_aiohttp(router_address: str, chat_complete_request: dict):
+async def chat_completions_aiohttp(router_address: str, model_name: str, text: str):
+    payload = {
+        "model": model_name,
+        "messages": [{"role": "user", "content": text}],
+    }
     url = f"http://{router_address}/v1/chat/completions"
     try:
         session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=None))
-        async with session.post(url, json=chat_complete_request) as resp:
+        async with session.post(url, json=payload) as resp:
             output = await resp.text()
             try:
                 output = json.loads(output)
@@ -146,7 +144,6 @@ async def chat_completions_aiohttp(router_address: str, chat_complete_request: d
                 return {}
     finally:
         await session.close()
-
 
 async def compute_score_mgrm(
     data_source: str,
@@ -161,11 +158,6 @@ async def compute_score_mgrm(
     question, split = extra_info["question"], extra_info["split"]
     correct, pred = verify(solution_str, ground_truth)
     reward_score = 1.0 if correct else 0
-    is_flawed_positive = False
-
-    # for test set, directly return the reward score
-    if split == "test":
-        return {"score": reward_score, "acc": correct, "pred": pred, "is_flawed_positive": is_flawed_positive}
 
     grm_prompt = PREPROCESS_INPUT_PROMPT_WITH_GROUND_TRUTH.format(
         problem=question,
@@ -173,30 +165,18 @@ async def compute_score_mgrm(
         solution=solution_str,
     )
     # grm_response = await generate_aiohttp(reward_router_address, text=grm_prompt)
-    chat_complete_request = {
-        "model": reward_model_name,
-        "messages": [{"role": "user", "content": grm_prompt}],
-    }
-    grm_response = await chat_completions_aiohttp(reward_router_address, chat_complete_request)
+    grm_response = await chat_completions_aiohttp(reward_router_address, reward_model_name, grm_prompt)
+    try:
+        grm_score = postprocess_fn(grm_response)
+    except Exception as e:
+        logger.info(f"Error: {e}.")
+        return {"score": 0, "acc": correct, "pred": pred, "judge_mismatch": 0}
 
-    if grm_response is not None:
-        try:
-            grm_score = postprocess_fn(grm_response)
-        except Exception as e:
-            logger.info(f"Error: {e}. Output: {grm_response}")
-            return {"score": 0, "acc": correct, "pred": pred, "is_flawed_positive": 0}
-    return {"score": grm_score, "acc": correct, "pred": pred, "is_flawed_positive": (grm_score != reward_score)}
+    if split == "test":
+        return {"score": reward_score, "acc": correct, "pred": pred, "judge_score": grm_score, "judge_mismatch": ((1.0 if grm_score > 0.5 else 0.0) != reward_score)}    
+    return {"score": grm_score, "acc": correct, "pred": pred, "judge_mismatch": ((1.0 if grm_score > 0.5 else 0.0) != reward_score)}
 
-def postprocess_fn(output_text: str) -> float:
-    """
-    Postprocess generative reward model output to extract a numerical score.
-    
-    Args:
-        output_text: The text output from the generative reward model
-    
-    Returns:
-        Numerical score (float) between 0.0 and 1.0
-    """    
+def postprocess_fn(output_text: str) -> float: 
     # Look for the "Final score: X.X/1.0" pattern in the last lines
     lines = output_text.strip().split('\n')
     
@@ -215,7 +195,6 @@ def postprocess_fn(output_text: str) -> float:
             if match:
                 score = float(match.group(1))
                 return max(0.0, min(1.0, score))
-
     
     # Default: return 0.0 if no score found
     print(f"Warning: Could not extract score from output: {output_text[:100]}, ... {output_text[100:]}")
