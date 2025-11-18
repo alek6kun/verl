@@ -715,15 +715,13 @@ class AgentLoopManager:
         self.reward_router_address = dict()
         from verl.experimental.reward import RewardModelManager
 
-        if self.config.reward_model.enable_resource_pool:
+        if self.config.reward_model.enable and self.config.reward_model.enable_resource_pool:
             for name, model_config in self.config.reward_model.reward_models.items():
-            # TODO (dyy): current rm is colocated with the legacy fsdp/megatron rm
-            # future pr will depericate fsdp/megatron rm and init RewardModelManager in standalone mode
-
-                if model_config.enable:
-                    manager = RewardModelManager(model_config, rm_resource_pool, name)
-                    self.reward_model_manager[name] = manager
-                    self.reward_router_address[name] = manager.get_router_address()
+                # TODO (dyy): current rm is colocated with the legacy fsdp/megatron rm
+                # future pr will depericate fsdp/megatron rm and init RewardModelManager in standalone mode
+                manager = RewardModelManager(model_config, rm_resource_pool, name)
+                self.reward_model_manager[name] = manager
+                self.reward_router_address[name] = manager.get_router_address()
         # for recipe to change
         if not hasattr(self, "rollout_replica_class"):
             self.rollout_replica_class = get_rollout_replica_class(self.config.actor_rollout_ref.rollout.name)

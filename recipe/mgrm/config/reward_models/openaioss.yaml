@@ -1,8 +1,6 @@
 openaioss:
     _target_: verl.workers.config.RewardModelConfig
     reward_manager: naive
-    enable: true
-    enable_resource_pool: true
     n_gpus_per_node: 4
     nnodes: 3
 
