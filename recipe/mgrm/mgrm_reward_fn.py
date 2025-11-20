@@ -152,7 +152,7 @@ async def compute_score_mgrm(
     extra_info: dict,
     reward_router_address: str,
     reward_model_tokenizer: PreTrainedTokenizer,
-    reward_model_name: str,
+    reward_model_path: str,
 ):
     """Compute the reward score."""
     question, split = extra_info["question"], extra_info["split"]
@@ -165,7 +165,7 @@ async def compute_score_mgrm(
         solution=solution_str,
     )
     # grm_response = await generate_aiohttp(reward_router_address, text=grm_prompt)
-    grm_response = await chat_completions_aiohttp(reward_router_address, reward_model_name, grm_prompt)
+    grm_response = await chat_completions_aiohttp(reward_router_address, reward_model_path, grm_prompt)
     try:
         grm_score = postprocess_fn(grm_response)
     except Exception as e:
@@ -199,3 +199,17 @@ def postprocess_fn(output_text: str) -> float:
     # Default: return 0.0 if no score found
     print(f"Warning: Could not extract score from output: {output_text[:100]}, ... {output_text[100:]}")
     return 0.0
+
+def compute_score_baseline(
+    data_source: str,
+    solution_str: str,
+    ground_truth: str,
+    extra_info: dict,
+    reward_router_address: str,
+    reward_model_tokenizer: PreTrainedTokenizer,
+    reward_model_path: str,
+):
+    """Compute the reward score."""
+    correct, pred = verify(solution_str, ground_truth)
+    reward_score = 1.0 if correct else 0
+    return {"score": reward_score, "acc": correct, "pred": pred}

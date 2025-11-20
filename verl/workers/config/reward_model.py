@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any, Optional
 
 from verl.base_config import BaseConfig
 
@@ -51,3 +51,5 @@ class RewardModelConfig(BaseConfig):
     rollout: RolloutConfig = field(default_factory=RolloutConfig)
     model: HFModelConfig = field(default_factory=HFModelConfig)
     sandbox_fusion: SandboxFusionConfig = field(default_factory=SandboxFusionConfig)
+
+    reward_kwargs: dict[str, Any] = field(default_factory=dict)
