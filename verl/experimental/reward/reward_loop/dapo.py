@@ -24,7 +24,15 @@ from verl.utils.reward_score import default_compute_score
 class DAPORewardLoopManager(RewardLoopManagerBase):
     """Reward loop for DAPO."""
 
-    def __init__(self, config, tokenizer, compute_score=None, reward_router_address=None, reward_model_tokenizer=None, reward_model_name=None):
+    def __init__(
+        self,
+        config,
+        tokenizer,
+        compute_score=None,
+        reward_router_address=None,
+        reward_model_tokenizer=None,
+        reward_model_name=None,
+    ):
         super().__init__(config, tokenizer)
         self.compute_score = compute_score or default_compute_score
         self.is_async_reward_score = inspect.iscoroutinefunction(self.compute_score)

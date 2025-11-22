@@ -111,7 +111,7 @@ def compute_individual_reward_model_metrics(batch: DataProto) -> dict[str, Any]:
         scores = batch.non_tensor_batch[score_key]
 
         if isinstance(scores, np.ndarray) and scores.size > 0:
-            valid_scores = scores[scores != None]
+            valid_scores = scores[scores is not None]
             if len(valid_scores) > 0:
                 try:
                     valid_scores = valid_scores.astype(float)
@@ -137,7 +137,7 @@ def compute_individual_reward_model_metrics(batch: DataProto) -> dict[str, Any]:
                     for info in extra_infos:
                         if isinstance(info, dict) and key in info:
                             val = info[key]
-                            if isinstance(val, (int, float, np.number)):
+                            if isinstance(val, (int | float | np.number)):
                                 values.append(float(val))
 
                     if len(values) > 0:

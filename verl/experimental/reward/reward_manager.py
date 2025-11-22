@@ -53,13 +53,11 @@ class RewardManagerWorker:
                 self.reward_fn,
                 self.reward_router_address,
                 self.reward_model_tokenizer,
-                self.reward_model_name
+                self.reward_model_name,
             )
         else:
             reward_loop_manager_cls = get_reward_loop_manager_cls(self.config.reward_model.reward_manager)
-            self.reward_loop = reward_loop_manager_cls(
-                self.config, self.input_tokenizer, self.reward_fn
-            )
+            self.reward_loop = reward_loop_manager_cls(self.config, self.input_tokenizer, self.reward_fn)
 
     async def compute_score(self, data: DataProto) -> DataProto:
         return await self.reward_loop.run_single(data)

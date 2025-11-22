@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import json
-import os
 
 import aiohttp
 from openai.types.chat import ChatCompletion

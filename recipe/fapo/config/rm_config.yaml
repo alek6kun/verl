@@ -7,7 +7,6 @@ defaults:
   - _self_
 
 reward_model:
-  _target_: verl.workers.config.RewardModelConfig
 
   reward_manager: dapo
   enable: False
@@ -17,6 +16,8 @@ reward_model:
   
   reward_models:
     fapo_genrm:
+      _target_: verl.workers.config.RewardModelConfig
+
       reward_manager: dapo
 
       n_gpus_per_node: 0

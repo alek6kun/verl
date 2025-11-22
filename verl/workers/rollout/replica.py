@@ -83,7 +83,7 @@ class RolloutReplica(ABC):
         model_config: DictConfig,
         gpus_per_node: int = 8,
         is_reward_model: bool = False,
-        reward_model_name: str = '',
+        reward_model_name: str = "",
     ) -> None:
         self.replica_rank = replica_rank
         self.config = omega_conf_to_dataclass(config)
@@ -161,7 +161,7 @@ class RolloutReplica(ABC):
         self.rollout_mode = RolloutMode.STANDALONE
         resource_pool_name = (
             f"rollout_pool_{self.replica_rank}"
-            if not not self.is_reward_model
+            if not self.is_reward_model
             else f"rollout_pool_reward_{self.replica_rank}_{self.reward_model_name}"
         )
         resource_pool_spec = {

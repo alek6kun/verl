@@ -292,7 +292,7 @@ class AgentLoopWorkerBase:
             if self.processor is not None:
                 self.processor.chat_template = self.config.actor_rollout_ref.model.custom_chat_template
             self.tokenizer.chat_template = self.config.actor_rollout_ref.model.custom_chat_template
-        
+
         if self.config.reward_model.enable:
             self.reward_manager_worker = {}
             for name in self.config.reward_model.reward_models.keys():
@@ -563,7 +563,7 @@ class AgentLoopWorkerBase:
                 names = list(self.reward_manager_worker.keys())
                 tasks = [worker.compute_score.remote(data) for worker in self.reward_manager_worker.values()]
                 results = await asyncio.gather(*tasks)
-                for name, result in zip(names, results):
+                for name, result in zip(names, results, strict=False):
                     output.extra_fields[f"{name}_reward_score"] = result["reward_score"]
                     output.extra_fields[f"{name}_reward_extra_info"] = result["reward_extra_info"]
 
@@ -677,7 +677,10 @@ class AgentLoopWorker(AgentLoopWorkerBase):
     """Agent loop worker takes a batch of messages and run each message in an agent loop."""
 
     def __init__(
-        self, config: DictConfig, server_handles: list[ray.actor.ActorHandle], reward_router_address: dict[str, str] = None
+        self,
+        config: DictConfig,
+        server_handles: list[ray.actor.ActorHandle],
+        reward_router_address: dict[str, str] = None,
     ):
         """Initialize agent loop manager.
         Args:
