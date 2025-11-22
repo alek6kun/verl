@@ -21,8 +21,8 @@ import aiohttp
 from openai.types.chat import ChatCompletion
 
 from verl import DataProto
-from verl.utils import omega_conf_to_dataclass
 from verl.single_controller.ray.base import RayWorkerGroup
+from verl.utils import omega_conf_to_dataclass
 from verl.workers.config import RewardModelConfig
 from verl.workers.rollout.replica import get_rollout_replica_class
 

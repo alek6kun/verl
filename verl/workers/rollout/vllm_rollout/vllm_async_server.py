@@ -492,7 +492,7 @@ class vLLMReplica(RolloutReplica):
         model_config: HFModelConfig,
         gpus_per_node: int = 8,
         is_reward_model: bool = False,
-        reward_model_name: str = '',
+        reward_model_name: str = "",
     ):
         super().__init__(replica_rank, config, model_config, gpus_per_node, is_reward_model, reward_model_name)
         self.server_class = vLLMHttpServer

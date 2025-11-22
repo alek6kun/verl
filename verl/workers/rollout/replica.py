@@ -83,7 +83,7 @@ class RolloutReplica(ABC):
         model_config: DictConfig,
         gpus_per_node: int = 8,
         is_reward_model: bool = False,
-        reward_model_name: str = '',
+        reward_model_name: str = "",
     ) -> None:
         self.replica_rank = replica_rank
         self.config = omega_conf_to_dataclass(config)
