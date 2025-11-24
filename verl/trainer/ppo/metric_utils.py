@@ -140,7 +140,7 @@ def compute_individual_reward_model_metrics(batch: DataProto, is_val: bool = Fal
                     if len(values) > 0:
                         if is_val:
                             metrics[f"val-core/{model_name}/{key}/mean"] = float(np.mean(values))
-                        else: 
+                        else:
                             metrics[f"reward_model/{model_name}/{key}/mean"] = float(np.mean(values))
 
     return metrics

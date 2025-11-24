@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import re
 
 _SOLUTION_CLIP_CHARS = 300
 
@@ -26,13 +25,13 @@ def extract_solution(solution_str, method="strict"):
     if len(solution_str) > _SOLUTION_CLIP_CHARS:
         solution_str = solution_str[-_SOLUTION_CLIP_CHARS:]
 
-    final_answer = solution_str.split('####')[-1].strip()
+    final_answer = solution_str.split("####")[-1].strip()
 
-    for remove_char in [',', '$', '%', 'g']:
-        final_answer = final_answer.replace(remove_char, '')
+    for remove_char in [",", "$", "%", "g"]:
+        final_answer = final_answer.replace(remove_char, "")
 
     return final_answer
-    
+
     # if method == "strict":
     #     # this also tests the formatting of the model
     #     solutions = re.findall("#### (\\-?[0-9\\.\\,]+)", solution_str)

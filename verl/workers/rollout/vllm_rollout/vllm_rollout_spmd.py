@@ -31,9 +31,11 @@ import getpass
 import inspect
 import logging
 import os
+import sys
 import time
 from contextlib import contextmanager
 from dataclasses import asdict
+from pathlib import Path
 from types import MethodType
 from typing import Any, Generator
 
@@ -95,8 +97,7 @@ from verl.workers.rollout.vllm_rollout.utils import (
 logger = logging.getLogger(__file__)
 logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))
 
-import sys
-from pathlib import Path
+
 def setup_transformers_modules():
     """
     Ensure transformers_modules directory exists and is in Python path.
