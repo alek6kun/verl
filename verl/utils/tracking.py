@@ -337,39 +337,46 @@ class ValidationGenerationsLogger:
     project_name: str = None
     experiment_name: str = None
 
-    def log(self, loggers, samples, step):
+    def log(self, loggers, samples, step, reward_model_names=None):
+        if reward_model_names is None:
+            reward_model_names = []
         if "wandb" in loggers:
-            self.log_generations_to_wandb(samples, step)
+            self.log_generations_to_wandb(samples, step, reward_model_names)
         if "swanlab" in loggers:
-            self.log_generations_to_swanlab(samples, step)
+            self.log_generations_to_swanlab(samples, step, reward_model_names)
         if "mlflow" in loggers:
-            self.log_generations_to_mlflow(samples, step)
+            self.log_generations_to_mlflow(samples, step, reward_model_names)
 
         if "clearml" in loggers:
-            self.log_generations_to_clearml(samples, step)
+            self.log_generations_to_clearml(samples, step, reward_model_names)
         if "tensorboard" in loggers:
-            self.log_generations_to_tensorboard(samples, step)
+            self.log_generations_to_tensorboard(samples, step, reward_model_names)
 
         if "vemlp_wandb" in loggers:
-            self.log_generations_to_vemlp_wandb(samples, step)
+            self.log_generations_to_vemlp_wandb(samples, step, reward_model_names)
 
-    def log_generations_to_vemlp_wandb(self, samples, step):
+    def log_generations_to_vemlp_wandb(self, samples, step, reward_model_names=None):
         from volcengine_ml_platform import wandb as vemlp_wandb
 
-        self._log_generations_to_wandb(samples, step, vemlp_wandb)
+        self._log_generations_to_wandb(samples, step, vemlp_wandb, reward_model_names)
 
-    def log_generations_to_wandb(self, samples, step):
+    def log_generations_to_wandb(self, samples, step, reward_model_names=None):
         import wandb
 
-        self._log_generations_to_wandb(samples, step, wandb)
+        self._log_generations_to_wandb(samples, step, wandb, reward_model_names)
 
-    def _log_generations_to_wandb(self, samples, step, wandb):
+    def _log_generations_to_wandb(self, samples, step, wandb, reward_model_names=None):
         """Log samples to wandb as a table"""
 
-        # Create column names for all samples
-        columns = ["step"] + sum(
-            [[f"input_{i + 1}", f"output_{i + 1}", f"score_{i + 1}"] for i in range(len(samples))], []
-        )
+        if reward_model_names is None:
+            reward_model_names = []
+
+        # Create column names for all samples, including reward model outputs
+        base_columns = ["input", "output", "score"]
+        rm_columns = [f"rm_{name}_output" for name in reward_model_names]
+        sample_columns = base_columns + rm_columns
+
+        columns = ["step"] + sum([[f"{col}_{i + 1}" for col in sample_columns] for i in range(len(samples))], [])
 
         if not hasattr(self, "validation_table"):
             # Initialize the table on first call
@@ -391,14 +398,17 @@ class ValidationGenerationsLogger:
         wandb.log({"val/generations": new_table}, step=step)
         self.validation_table = new_table
 
-    def log_generations_to_swanlab(self, samples, step):
+    def log_generations_to_swanlab(self, samples, step, reward_model_names=None):
         """Log samples to swanlab as text"""
         import swanlab
 
+        if reward_model_names is None:
+            reward_model_names = []
+
         swanlab_table = swanlab.echarts.Table()
 
-        # Create column names
-        headers = ["step", "input", "output", "score"]
+        # Create column names including reward model outputs
+        headers = ["step", "input", "output", "score"] + [f"rm_{name}_output" for name in reward_model_names]
 
         swanlab_row_list = [[step, *sample] for sample in samples]
         swanlab_table.add(headers=headers, rows=swanlab_row_list)
@@ -406,7 +416,7 @@ class ValidationGenerationsLogger:
         # Log to swanlab
         swanlab.log({"val/generations": swanlab_table}, step=step)
 
-    def log_generations_to_mlflow(self, samples, step):
+    def log_generations_to_mlflow(self, samples, step, reward_model_names=None):
         """Log validation generation to mlflow as artifacts"""
         # https://mlflow.org/docs/latest/api_reference/python_api/mlflow.html?highlight=log_artifact#mlflow.log_artifact
 
@@ -415,12 +425,19 @@ class ValidationGenerationsLogger:
 
         import mlflow
 
+        if reward_model_names is None:
+            reward_model_names = []
+
         try:
             with tempfile.TemporaryDirectory() as tmp_dir:
                 validation_gen_step_file = Path(tmp_dir, f"val_step{step}.json")
                 row_data = []
                 for sample in samples:
                     data = {"input": sample[0], "output": sample[1], "score": sample[2]}
+                    # Add reward model outputs if present
+                    for idx, rm_name in enumerate(reward_model_names):
+                        if len(sample) > 3 + idx:
+                            data[f"rm_{rm_name}_output"] = sample[3 + idx]
                     row_data.append(data)
                 with open(validation_gen_step_file, "w") as file:
                     json.dump(row_data, file)
@@ -428,25 +445,32 @@ class ValidationGenerationsLogger:
         except Exception as e:
             print(f"WARNING: save validation generation file to mlflow failed with error {e}")
 
-    def log_generations_to_clearml(self, samples, step):
+    def log_generations_to_clearml(self, samples, step, reward_model_names=None):
         """Log validation generation to clearml as table"""
 
         import clearml
         import pandas as pd
 
+        if reward_model_names is None:
+            reward_model_names = []
+
         task: clearml.Task | None = clearml.Task.current_task()
         if task is None:
             return
 
-        table = [
-            {
+        table = []
+        for sample in samples:
+            row = {
                 "step": step,
                 "input": sample[0],
                 "output": sample[1],
                 "score": sample[2],
             }
-            for sample in samples
-        ]
+            # Add reward model outputs if present
+            for idx, rm_name in enumerate(reward_model_names):
+                if len(sample) > 3 + idx:
+                    row[f"rm_{rm_name}_output"] = sample[3 + idx]
+            table.append(row)
 
         logger = task.get_logger()
         logger.report_table(
@@ -456,7 +480,7 @@ class ValidationGenerationsLogger:
             iteration=step,
         )
 
-    def log_generations_to_tensorboard(self, samples, step):
+    def log_generations_to_tensorboard(self, samples, step, reward_model_names=None):
         """Log samples to tensorboard as text"""
         # Initialize tensorboard writer if not exists
         if not hasattr(self, "writer"):
@@ -472,19 +496,28 @@ class ValidationGenerationsLogger:
             os.makedirs(tensorboard_dir, exist_ok=True)
             self.writer = SummaryWriter(log_dir=tensorboard_dir)
 
+        if reward_model_names is None:
+            reward_model_names = []
+
         # Format the samples data into readable text
         text_content = f"**Generation Results - Step {step}**\n\n"
 
         for i, sample in enumerate(samples):
             text_content += f"### Sample {i + 1}\n"
 
-            # Assuming sample contains [input, output, score]
+            # Assuming sample contains [input, output, score, rm_outputs...]
             if len(sample) >= 3:
                 input_text, output_text, score = sample[0], sample[1], sample[2]
 
                 text_content += f"**Input:** {input_text}\n\n"
                 text_content += f"**Output:** {output_text}\n\n"
                 text_content += f"**Score:** {score}\n\n"
+
+                # Add reward model outputs if present
+                for idx, rm_name in enumerate(reward_model_names):
+                    if len(sample) > 3 + idx:
+                        rm_output = sample[3 + idx]
+                        text_content += f"**RM {rm_name} Output:** {rm_output}\n\n"
             else:
                 # Handle cases where sample format might be different
                 text_content += f"**Data:** {sample}\n\n"

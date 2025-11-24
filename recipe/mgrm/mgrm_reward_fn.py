@@ -190,6 +190,7 @@ async def compute_score_mgrm(
             "score": reward_score,
             "acc": correct,
             "pred": pred,
+            "output_text": grm_response,
             "judge_score": grm_score,
             "judge_mismatch": ((1.0 if grm_score > 0.5 else 0.0) != reward_score),
         }

@@ -488,7 +488,7 @@ class RayPPOTrainer:
                 dump_path=rollout_data_dir,
             )
 
-    def _maybe_log_val_generations(self, inputs, outputs, scores):
+    def _maybe_log_val_generations(self, inputs, outputs, scores, reward_data=None):
         """Log a table of validation samples to the configured logger (wandb or swanlab)"""
 
         generations_to_log = self.config.trainer.log_val_generations
@@ -498,8 +498,39 @@ class RayPPOTrainer:
 
         import numpy as np
 
-        # Create tuples of (input, output, score) and sort by input text
-        samples = list(zip(inputs, outputs, scores, strict=True))
+        # Extract reward model outputs from reward_data
+        reward_model_outputs = {}
+        if reward_data is not None and hasattr(reward_data, "non_tensor_batch") and reward_data.non_tensor_batch:
+            # Find all reward model output_text keys
+            for key, value in reward_data.non_tensor_batch.items():
+                if key.endswith("_reward_extra_info"):
+                    model_name = key.replace("_reward_extra_info", "")
+                    # Extract output_text from extra_info dicts
+                    if isinstance(value, np.ndarray) and value.size > 0:
+                        output_texts = []
+                        for info in value:
+                            if isinstance(info, dict) and "output_text" in info:
+                                output_texts.append(info["output_text"])
+                            else:
+                                output_texts.append(None)
+                        if any(text is not None for text in output_texts):
+                            reward_model_outputs[model_name] = output_texts
+
+        # Create tuples with all data
+        if reward_model_outputs:
+            # Build samples with reward model outputs
+            num_samples = len(inputs)
+            samples = []
+            for i in range(num_samples):
+                sample = [inputs[i], outputs[i], scores[i]]
+                # Add reward model outputs in consistent order
+                for model_name in sorted(reward_model_outputs.keys()):
+                    sample.append(reward_model_outputs[model_name][i])
+                samples.append(tuple(sample))
+        else:
+            # Fallback to original format if no reward model outputs
+            samples = list(zip(inputs, outputs, scores, strict=True))
+
         samples.sort(key=lambda x: x[0])  # Sort by input text
 
         # Use fixed random seed for deterministic shuffling
@@ -509,8 +540,11 @@ class RayPPOTrainer:
         # Take first N samples after shuffling
         samples = samples[:generations_to_log]
 
-        # Log to each configured logger
-        self.validation_generations_logger.log(self.config.trainer.logger, samples, self.global_steps)
+        # Log to each configured logger, passing the reward model names
+        reward_model_names = sorted(reward_model_outputs.keys()) if reward_model_outputs else []
+        self.validation_generations_logger.log(
+            self.config.trainer.logger, samples, self.global_steps, reward_model_names=reward_model_names
+        )
 
     def _get_gen_batch(self, batch: DataProto) -> DataProto:
         reward_model_keys = set({"data_source", "reward_model", "extra_info", "uid"}) & batch.non_tensor_batch.keys()
@@ -636,7 +670,9 @@ class RayPPOTrainer:
             )
 
         reward_data = DataProto.concat(reward_datas)
-        self._maybe_log_val_generations(inputs=sample_inputs, outputs=sample_outputs, scores=sample_scores)
+        self._maybe_log_val_generations(
+            inputs=sample_inputs, outputs=sample_outputs, scores=sample_scores, reward_data=reward_data
+        )
 
         # dump generations
         val_data_dir = self.config.trainer.get("validation_data_dir", None)
