@@ -292,16 +292,24 @@ class AgentLoopWorkerBase:
             if self.processor is not None:
                 self.processor.chat_template = self.config.actor_rollout_ref.model.custom_chat_template
             self.tokenizer.chat_template = self.config.actor_rollout_ref.model.custom_chat_template
-
-        self.reward_manager_worker = {}
-        for name in self.config.reward_model.reward_models.keys():
-            worker = RewardManagerWorker.options(
+        
+        if self.config.reward_model.enable:
+            self.reward_manager_worker = {}
+            for name in self.config.reward_model.reward_models.keys():
+                worker = RewardManagerWorker.options(
+                    scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
+                        node_id=ray.get_runtime_context().get_node_id(),
+                        soft=False,
+                    )
+                ).remote(self.config, self.reward_router_address[name], name)
+                self.reward_manager_worker[name] = worker
+        else:
+            self.reward_manager_worker = RewardManagerWorker.options(
                 scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
                     node_id=ray.get_runtime_context().get_node_id(),
                     soft=False,
-                )
-            ).remote(self.config, self.reward_router_address[name], name)
-            self.reward_manager_worker[name] = worker
+                ),
+            ).remote(self.config)
 
         trace_config = self.config.actor_rollout_ref.rollout.get("trace", {})
         RolloutTraceConfig.init(
@@ -551,15 +559,21 @@ class AgentLoopWorkerBase:
                 batch=batch,
                 non_tensor_batch=non_tensor_batch,
             )
-            names = list(self.reward_manager_worker.keys())
-            tasks = [worker.compute_score.remote(data) for worker in self.reward_manager_worker.values()]
-            results = await asyncio.gather(*tasks)
-            for name, result in zip(names, results):
-                output.extra_fields[f"{name}_reward_score"] = result["reward_score"]
-                output.extra_fields[f"{name}_reward_extra_info"] = result["reward_extra_info"]
+            if self.config.reward_model.enable:
+                names = list(self.reward_manager_worker.keys())
+                tasks = [worker.compute_score.remote(data) for worker in self.reward_manager_worker.values()]
+                results = await asyncio.gather(*tasks)
+                for name, result in zip(names, results):
+                    output.extra_fields[f"{name}_reward_score"] = result["reward_score"]
+                    output.extra_fields[f"{name}_reward_extra_info"] = result["reward_extra_info"]
 
-            # For now just mean
-            output.reward_score = sum(result["reward_score"] for result in results) / len(results)
+                # For now just mean
+                output.reward_score = sum(result["reward_score"] for result in results) / len(results)
+            else:
+                # Reward function, no reward models
+                result = await self.reward_manager_worker.compute_score.remote(data)
+                output.reward_score = result["reward_score"]
+                output.extra_fields["reward_extra_info"] = result["reward_extra_info"]
 
         return _InternalAgentLoopOutput(
             prompt_ids=prompt_output["input_ids"],
@@ -713,9 +727,9 @@ class AgentLoopManager:
         self.worker_group = worker_group
         self.reward_model_manager = dict()
         self.reward_router_address = dict()
-        from verl.experimental.reward import RewardModelManager
-
         if self.config.reward_model.enable and self.config.reward_model.enable_resource_pool:
+            from verl.experimental.reward import RewardModelManager
+
             for name, model_config in self.config.reward_model.reward_models.items():
                 # TODO (dyy): current rm is colocated with the legacy fsdp/megatron rm
                 # future pr will depericate fsdp/megatron rm and init RewardModelManager in standalone mode

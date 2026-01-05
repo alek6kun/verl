@@ -312,7 +312,10 @@ class RateLimitedRewardLoopManager(RewardLoopManagerBase):
         self.is_async_reward_score = inspect.iscoroutinefunction(self.compute_score)
         self.reward_router_address = reward_router_address
         self.reward_model_tokenizer = reward_model_tokenizer
-        self.reward_model_name = reward_model_name
+        if config.reward_model.enable:
+            self.reward_model_config = config.reward_model.reward_models[reward_model_name]
+        else:
+            self.reward_model_config = config.reward_model
         self.timeout = config.reward_model.get("timeout", 300.0)
 
     async def _compute_reward(
@@ -326,7 +329,7 @@ class RateLimitedRewardLoopManager(RewardLoopManagerBase):
                 extra_info=extra_info,
                 reward_router_address=self.reward_router_address,
                 reward_model_tokenizer=self.reward_model_tokenizer,
-                reward_model_name=self.reward_model_name,
+                reward_model_path=self.reward_model_config.get("model", {}).get("path", None),
             )
         else:
             return await self.loop.run_in_executor(
@@ -338,7 +341,7 @@ class RateLimitedRewardLoopManager(RewardLoopManagerBase):
                     extra_info=extra_info,
                     reward_router_address=self.reward_router_address,
                     reward_model_tokenizer=self.reward_model_tokenizer,
-                    reward_model_name=self.reward_model_name,
+                    reward_model_path=self.reward_model_config.get("model", {}).get("path", None),
                 ),
             )
 
